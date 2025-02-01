@@ -19,6 +19,7 @@
     "@langchain/core": "^0.3.26",
     "@langchain/langgraph": "^0.2.34",
     "@langchain/openai": "^0.3.16",
+    "axios": "^1.7.9",
     "dotenv": "^16.4.7"
   },
   "repository": {

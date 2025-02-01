@@ -1,5 +1,6 @@
 import { Tool } from "@langchain/core/tools";
 import HederaAgentKit from "../agent";
+import { HederaConsensusService } from "../hederaConsensusService";
 
 
 export class HederaCreateFungibleTokenTool extends Tool {
@@ -62,7 +63,7 @@ amount: number, the amount of tokens to transfer e.g. 100
   protected async _call(input: string): Promise<string> {
     try {
       const parsedInput = JSON.parse(input);
-      
+
       await this.hederaKit.transferToken(
         parsedInput.tokenId,
         parsedInput.toAccountId,
@@ -141,7 +142,7 @@ Example input: {
   protected async _call(input: string): Promise<string> {
     try {
       const parsedInput = JSON.parse(input);
-      
+
       await this.hederaKit.airdropToken(
         parsedInput.tokenId,
         parsedInput.recipients
@@ -164,11 +165,172 @@ Example input: {
   }
 }
 
-export function createHederaTools(hederaKit: HederaAgentKit): Tool[] {
+export class HederaCreateTopicTool extends Tool {
+  name = "hedera_create_topic";
+  description = `Create a consensus topic on Hedera.
+  Inputs (a JSON string):
+    { "topicMemo": string (optional) }
+  This tool creates a new consensus topic that allows the agent to publish messages 
+  for on-chain communications. The 'topicMemo' describes the purpose of the topic.
+  Example: { "topicMemo": "Discussion on Hedera Consensus Service" }
+  `;
+
+  constructor(private hederaConsensus: HederaConsensusService) {
+    super();
+  }
+
+  protected async _call(input: string): Promise<string> {
+    try {
+      const parsed = JSON.parse(input);
+      const topicId = await this.hederaConsensus.createTopic(parsed.topicMemo);
+      return JSON.stringify({
+        status: "success",
+        topicId: topicId.toString(),
+        memo: parsed.topicMemo || "Default Topic"
+      });
+    } catch (error: any) {
+      return JSON.stringify({
+        status: "error",
+        message: error.message
+      });
+    }
+  }
+}
+
+export class HederaUpdateTopicTool extends Tool {
+  name = "hedera_update_topic";
+  description = `Update the memo (description) of an existing Hedera consensus topic.
+  Inputs (a JSON string):
+    { "topicId": string, "topicMemo": string }
+  The new memo helps describe the purpose or context of the topic.
+  `;
+
+  constructor(private hederaConsensus: HederaConsensusService) {
+    super();
+  }
+
+  protected async _call(input: string): Promise<string> {
+    try {
+      const { topicId, topicMemo } = JSON.parse(input);
+      await this.hederaConsensus.updateTopic(topicId, topicMemo);
+      return JSON.stringify({
+        status: "success",
+        message: "Topic memo updated",
+        topicId: topicId,
+        newMemo: topicMemo
+      });
+    } catch (error: any) {
+      return JSON.stringify({
+        status: "error",
+        message: error.message
+      });
+    }
+  }
+}
+
+export class HederaDeleteTopicTool extends Tool {
+  name = "hedera_delete_topic";
+  description = `Delete an existing Hedera consensus topic.
+  Inputs (a JSON string):
+    { "topicId": string }
+  Use this tool cautiously as deleting a topic is irreversible.
+  `;
+
+  constructor(private hederaConsensus: HederaConsensusService) {
+    super();
+  }
+
+  protected async _call(input: string): Promise<string> {
+    try {
+      const { topicId } = JSON.parse(input);
+      await this.hederaConsensus.deleteTopic(topicId);
+      return JSON.stringify({
+        status: "success",
+        message: "Topic deleted",
+        topicId: topicId
+      });
+    } catch (error: any) {
+      return JSON.stringify({
+        status: "error",
+        message: error.message
+      });
+    }
+  }
+}
+
+export class HederaSubmitMessageTool extends Tool {
+  name = "hedera_submit_message";
+  description = `Submit a message to a Hedera consensus topic.
+  Inputs (a JSON string):
+    { "topicId": string, "message": string }
+  This tool posts textual updates or instructions to the specified topic.
+  `;
+
+  constructor(private hederaConsensus: HederaConsensusService) {
+    super();
+  }
+
+  protected async _call(input: string): Promise<string> {
+    try {
+      const { topicId, message } = JSON.parse(input);
+      await this.hederaConsensus.submitMessage(topicId, message);
+      return JSON.stringify({
+        status: "success",
+        message: "Message submitted to topic",
+        topicId: topicId
+      });
+    } catch (error: any) {
+      return JSON.stringify({
+        status: "error",
+        message: error.message
+      });
+    }
+  }
+}
+
+export class HederaQueryTopicTool extends Tool {
+  name = "hedera_query_topic";
+  description = `Query messages from a Hedera consensus topic.
+  Inputs (a JSON string):
+    { "topicId": string, "duration": number (optional), "limit": number (optional) }
+  This tool collects and returns messages from a topic for the specified duration and limit.
+  `;
+
+  constructor(private hederaConsensus: HederaConsensusService) {
+    super();
+  }
+
+  protected async _call(input: string): Promise<string> {
+    try {
+      const parsed = JSON.parse(input);
+      const topicId = parsed.topicId;
+      const duration = parsed.duration || 5000;
+      const limit = parsed.limit || 10;
+      const messages = await this.hederaConsensus.queryTopic(topicId, duration, limit);
+      return JSON.stringify({
+        status: "success",
+        topicId,
+        messages
+      });
+    } catch (error: any) {
+      return JSON.stringify({
+        status: "error",
+        message: error.message
+      });
+    }
+  }
+}
+
+export function createHederaTools(hederaKit: HederaAgentKit, hederaConsensus: HederaConsensusService): Tool[] {
   return [
     new HederaCreateFungibleTokenTool(hederaKit),
     new HederaTransferTokenTool(hederaKit),
     new HederaGetBalanceTool(hederaKit),
-    new HederaAirdropTokenTool(hederaKit)
+    new HederaAirdropTokenTool(hederaKit),
+    new HederaCreateTopicTool(hederaConsensus),
+    new HederaUpdateTopicTool(hederaConsensus),
+    new HederaDeleteTopicTool(hederaConsensus),
+    new HederaSubmitMessageTool(hederaConsensus),
+    new HederaQueryTopicTool(hederaConsensus)
   ]
 }
