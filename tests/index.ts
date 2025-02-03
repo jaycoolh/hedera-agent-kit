@@ -6,6 +6,8 @@ import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { HumanMessage } from "@langchain/core/messages";
 import * as dotenv from "dotenv";
 import * as readline from "readline";
+import { Client } from "@hashgraph/sdk";
+import { HederaConsensusService } from "../src/hederaConsensusService";
 
 dotenv.config();
 
@@ -47,8 +49,13 @@ async function initializeAgent() {
       process.env.HEDERA_NETWORK as "mainnet" | "testnet" | "previewnet" || "testnet"
     );
 
+    // Create the HederaConsensusService instance
+    const client = process.env.HEDERA_NETWORK === "mainnet" ? Client.forMainnet() : Client.forTestnet();
+    client.setOperator(process.env.HEDERA_ACCOUNT_ID!, process.env.HEDERA_PRIVATE_KEY!);
+    const consensusService = new HederaConsensusService(client);
+
     // Create the LangChain-compatible tools
-    const tools = createHederaTools(hederaKit);
+    const tools = createHederaTools(hederaKit, consensusService);
 
     // Prepare an in-memory checkpoint saver
     const memory = new MemorySaver();
@@ -181,6 +188,53 @@ async function chooseMode(): Promise<"chat" | "auto"> {
   }
 }
 
+async function testConsensusService() {
+  console.log("----- Simulating Conversation with Hedera Consensus Service -----\n");
+
+  // Use testnet or mainnet based on environment variable.
+  const client = process.env.HEDERA_NETWORK === "mainnet" ? Client.forMainnet() : Client.forTestnet();
+  client.setOperator(process.env.HEDERA_ACCOUNT_ID!, process.env.HEDERA_PRIVATE_KEY!);
+
+  const hcs = new HederaConsensusService(client);
+  let topicId;
+
+  try {
+    console.log("User: Can you create a consensus topic for our discussion?");
+    topicId = await hcs.createTopic("Conversation Topic");
+    console.log("Agent: Topic created successfully. ID:", topicId.toString(), "\n");
+
+    console.log("User: Please post my greeting 'Hello Hedera' to the topic.");
+    await hcs.submitMessage(topicId.toString(), "Hello Hedera!");
+    console.log("Agent: Your message has been submitted.\n");
+
+    console.log("User: Could you fetch the latest messages from this topic?");
+    // Pause briefly to allow for message propagation.
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const messages = await hcs.queryTopic(topicId.toString(), 5000, 10);
+    console.log("Agent: Here are the recent messages:", messages, "\n");
+
+    console.log("User: Can you update the topic's description to 'Discussing Hedera Consensus Service'?");
+    await hcs.updateTopic(topicId.toString(), "Discussing Hedera Consensus Service");
+    console.log("Agent: Topic memo updated.\n");
+
+  } catch (error) {
+    console.error("Agent: Error during conversation simulation:", error);
+  }
+
+  // Optionally, delete the topic.
+  if (topicId) {
+    try {
+      console.log("User: Let's conclude by deleting the topic.");
+      await hcs.deleteTopic(topicId.toString());
+      console.log("Agent: Topic was deleted successfully.\n");
+    } catch (error) {
+      console.error("Agent: Error deleting topic:", error);
+    }
+  } else {
+    console.error("Agent: Topic creation failed, skipping deletion.");
+  }
+}
+
 async function main() {
   try {
     console.log("Starting Agent...");
@@ -205,4 +259,12 @@ if (require.main === module) {
     console.error("Fatal error:", error);
     process.exit(1);
   });
+}
+
+// If the script is run with "test-consensus" argument, run the HCS tests.
+if (process.argv.includes("test-consensus")) {
+  (async () => {
+    await testConsensusService();
+    process.exit(0);
+  })();
 }
